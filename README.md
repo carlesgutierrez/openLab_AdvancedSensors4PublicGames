@@ -1,2 +1,2 @@
 # openLab_AdvancedSensors4PublicGames
-Full OpenFrameworks Version ready to play Sensors4Games Addon and others examples for Nucl.ai OpenLabJuly 2016
+Addons kit ready to use for the OpenLab, AdvancedSensors4PublicGames / Nucl.ai July 2016
