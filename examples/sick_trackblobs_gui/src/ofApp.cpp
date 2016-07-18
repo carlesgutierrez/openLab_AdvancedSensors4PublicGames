@@ -12,7 +12,9 @@ void ofApp::setup() {
 	recording = false;
 	
 	grabber.setup();
+	//Normally 1192.168.0.1 as default , but This Laser has been configured to this other IP.
 	grabber.setIp("169.254.206.112");
+
 	//player.load("recording.lms");
 	
 	sick = &grabber;//&player;
@@ -27,17 +29,70 @@ void ofApp::setup() {
 	tracker.setPersistence(persistence);
 	tracker.setRegion(trackingRegion);
 	
-	//required call
+	//imGui required call
 	myGui.setup();
+	
+	// open an outgoing connection to HOST:PORT
+	sender.setup(IPSender, PortSender);
+	
 }
 
+//-----------------------------------------
 void ofApp::update() {
 	sick->update();
 	if(sick->isFrameNew()) {
 		tracker.update(*sick);
 	}
+	
+	if(bResetHostIp){
+		sender.setup(IPSender, PortSender);
+		bResetHostIp = false;
+	}
+	
+	if(bOSCActived){
+		sendOSCBlobTrackerData();
+	}
 }
 
+//-----------------------------------------
+void ofApp::sendOSCBlobTrackerData(){
+	
+	currentTrackPoints.clear();
+	currentTrackPoints = tracker.getClusters();
+	//TODO check how to get the label of the cluster
+
+	if(currentTrackPoints.size() > 0){
+		ofxOscMessage m;
+		m.clear();
+		m.setAddress("/TrackBlobs");
+		
+		sender.sendMessage(m, false);
+		
+		float rectTrackerW = tracker.getTrackRegion().getWidth();
+		float rectTrackerH = tracker.getTrackRegion().getHeight();
+		
+		for(int i=0 ; i < currentTrackPoints.size(); i++){
+			ofPoint cluster = ofxCv::toOf(currentTrackPoints[i]);
+			cluster.x = abs(tracker.getTrackRegion().getPosition().x - cluster.x);
+			cluster.y = abs(tracker.getTrackRegion().getPosition().y - cluster.y);
+			//TODO add label as m.addInt32Arg();
+			//TODO Check if send X inverted and Y too. Xinverted = 1 - X
+			m.addFloatArg(cluster.x/rectTrackerW);
+			m.addFloatArg(cluster.y/rectTrackerH);
+		}
+		
+		sender.sendMessage(m, false);
+	}else{
+		
+		//TODO Check what is usefull to send too if no blobs are tracked
+	}
+
+	
+
+	
+}
+
+//----------------------------------------
 void ofApp::draw() {
 	ofBackground(0);
 	
@@ -55,18 +110,46 @@ void ofApp::draw() {
 	ofPushMatrix();
 	ofScale(scale, scale);
 	sick->draw(12, 2400);
-	tracker.draw();
+	
+	
+	//Manual Clusters Draw Method
+	if(bDrawClusters){
+		currentTrackPoints.clear();
+		currentTrackPoints = tracker.getClusters();
+		
+		ofSetColor(0,0,255);
+		
+		for(int i=0 ; i < currentTrackPoints.size(); i++){
+			ofPoint cluster = ofxCv::toOf(currentTrackPoints[i]);
+			//TODO Check how to get the label from the cluster
+			//ofDrawString("id = "+ofToString(labelCluster) , cluster.x, cluster.y - 40);
+			ofDrawCircle(cluster.x, cluster.y, 40);
+		}
+	}else {
+		tracker.draw();
+	}
+	
 	ofPopMatrix();
 	
 	//ofDrawString("Sick data Frms")
 	
 	drawGui();
+	
+	
+	//Draw and Edit OSC info
+	//if(bOSCActived)drawGui_OSC_configurable();
 }
 
 //---------------------------------------------------------------
 void ofApp::drawGui(){
 	myGui.begin();
 	
+	if(recording){
+		ImGui::Text("Sick REC !! ");
+		//TODO Show seconds recordered
+	}
+	
+	ImGui::PushItemWidth(150);
 	
 	ImGui::SliderFloat("Scale Area", &scale, 0.05, .2);
 
@@ -118,13 +201,52 @@ void ofApp::drawGui(){
 		bKmeans = false;
 	}
 	
+	ImGui::Separator();
+	ImGui::Separator();
+	ImGui::Separator();
+	
+	ImGui::Checkbox("Manual Clusters Drawer", &bDrawClusters);
+	ImGui::Checkbox("Send OSC", &bOSCActived);
+	
+	ImGui::PopItemWidth();
+	
 								
 	
 	myGui.end();
 }
 
+//-------------------------------------------------
+void ofApp::drawGui_OSC_configurable(){
+	
+
+	ImGui::Text("Sending OSC data to ");
+	ImGui::Text(ofToString(PortSender,0).c_str());
+	ImGui::Text(IPSender.c_str());
+	
+	//TODO InputTextFilterCharacter
+	static char buf1[16] = "127.0.0.1";
+	ImGui::PushItemWidth(90);
+	ImGui::InputText("WIP Edit Host", buf1, 16);ImGui::SameLine();
+	ImGui::Checkbox("Reset HOST IP", &bResetHostIp);
+	ImGui::PopItemWidth();
+	
+	if(bResetHostIp){
+		IPSender = std::string(buf1);
+		cout << "Lets reset IPSender" << endl;
+	}
+	
+
+}
+
 void ofApp::keyPressed(int key){
-	if(key == 'r') {
+	
+	//As far as I tried
+	//seems not working proplely at load and play this data
+	//May be is necesary to set low or framerate reading ( sleepMillis  )
+	//TODO debug timings
+	
+	
+	if(key == OF_KEY_F1) {
 		recording = !recording;
 		if(recording) {
 			grabber.startRecording();
@@ -132,7 +254,7 @@ void ofApp::keyPressed(int key){
 			grabber.stopRecording("out.lms");
 		}
 	}
-	if(key == '\t') {
+	if(key == OF_KEY_F2) {
 		if(sick == &player) {
 			sick = &grabber;
 		} else {
